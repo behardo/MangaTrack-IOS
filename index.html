@@ -649,7 +649,9 @@ async function searchUsers(v){
   el.innerHTML=`<div class="empty">Ricerca...</div>`;
   userSearchTimer=setTimeout(async()=>{
     try{
+      el.innerHTML=`<div class="empty" style="font-size:11px;">Cercando "${esc(v)}"...<br>User: ${session?.user?.id?.slice(0,8)}</div>`;
       const results=await safeDbQ("profiles",`username=ilike.%${encodeURIComponent(v)}%&select=id,username,avatar_color&limit=10`);
+      el.innerHTML=`<div class="empty" style="font-size:11px;">Trovati: ${results.length}<br>${results.map(r=>r.username).join(", ")||"nessuno"}</div>`;
       const myFollows=await safeDbQ("follows",`follower_id=eq.${session.user.id}&select=following_id`);
       const followingIds=myFollows.map(f=>f.following_id);
       const filtered=results.filter(p=>p.id!==session.user.id);
@@ -664,7 +666,7 @@ async function searchUsers(v){
             :`<button class="btn btn-sm btn-primary" onclick="followUser('${p.id}','${esc(p.username)}')">+ Segui</button>`}
         </div>`;
       }).join("")}</div>`;
-    }catch(e){el.innerHTML=`<div class="empty" style="font-size:12px;word-break:break-all;">Errore: ${esc(e.message)}</div>`}
+    }catch(e){el.innerHTML=`<div class="empty" style="font-size:11px;word-break:break-all;">ERRORE COMPLETO:<br>${esc(JSON.stringify(e.message))}<br><br>Stack: ${esc(e.stack||"")}</div>`}
   },400);
 }
 
