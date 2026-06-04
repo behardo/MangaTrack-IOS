@@ -251,11 +251,11 @@ let pendingRecs=0;
 let userSearchTimer=null;
 
 async function init(){
-  const {data:{session:s}}=await supa.auth.getSession();
-  if(s){session=s;const u=s.user;session.user=u}
-  else{
-    const {data:{session:rs}}=await supa.auth.refreshSession().catch(()=>({data:{session:null}}));
-    if(rs){session=rs;session.user=rs.user}
+  // il client supabase gestisce la sessione automaticamente
+  const {data:{session:s},error}=await supa.auth.getSession();
+  if(s){
+    session=s;
+    session.user=s.user;
   }
   document.getElementById("loader").style.display="none";
   if(!session?.access_token){showAuth();return}
