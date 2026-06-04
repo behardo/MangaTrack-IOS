@@ -231,7 +231,7 @@ async function dbDel(table,match){return sb(`/rest/v1/${table}?${match}`,{method
 const STATUS=["In lettura","Completati","In pausa","Abbandonati","Da leggere"];
 const SC={"In lettura":"#e74c3c","Completati":"#27ae60","In pausa":"#f39c12","Abbandonati":"#7f8c8d","Da leggere":"#3498db"};
 const GC=["#e74c3c","#3498db","#27ae60","#f39c12","#9b59b6","#1abc9c","#e67e22","#2980b9"];
-const AVATAR_COLORS=["#c0392b","#2980b9","#27ae60","#8e44ad","#d35400","#16a085"];
+const AVATAR_COLORS=["#c0392b","#a93226","#922b21","#7b241c","#e74c3c","#cd6155"];
 const STATUS_META={"In lettura":{icon:"📖",desc:"Stai leggendo"},"Completati":{icon:"✅",desc:"Finito"},"In pausa":{icon:"⏸️",desc:"In sospeso"},"Abbandonati":{icon:"🚫",desc:"Lasciato perdere"},"Da leggere":{icon:"🔖",desc:"Lista desideri"}};
 
 let library=[], myProfile=null;
@@ -440,8 +440,7 @@ function renderHome(){
   const sc=library.filter(m=>m.score>0),avg=sc.length?(sc.reduce((a,m)=>a+m.score,0)/sc.length).toFixed(1):"—";
   const favs=library.filter(m=>m.favourite);
   const recent=[...library].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,5);
-  let h=`<div style="font-size:15px;font-weight:700;color:var(--muted);margin-bottom:12px;">Ciao, <span style="color:var(--text);">@${esc(myProfile?.username||"")}</span> 👋</div>
-  <div class="stat-grid">
+  let h=`<div class="stat-grid">
     ${[["Manga totali",tot],["Capitoli",chaps.toLocaleString()],["Voto medio",avg],["Preferiti",favs.length]].map(([l,v])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join("")}
   </div>`;
   if(!library.length){h+=`<div class="empty"><span class="empty-icon">◫</span>Nessun manga in libreria.<br>Cerca qualcosa nella tab Cerca!</div>`;return h}
@@ -563,10 +562,10 @@ async function addFromPreview(){
 function renderSocial(){
   return `<div style="font-weight:800;font-size:18px;margin-bottom:14px;color:var(--red);">Social</div>
   <div class="page-tabs">
-    <button class="page-tab${socialTab==="feed"?" active":""}" onclick="socialTab='feed';updateSocial()">📰 Feed</button>
-    <button class="page-tab${socialTab==="following"?" active":""}" onclick="socialTab='following';updateSocial()">👤 Seguiti</button>
-    <button class="page-tab${socialTab==="find"?" active":""}" onclick="socialTab='find';updateSocial()">🔍 Cerca</button>
-    <button class="page-tab${socialTab==="recs"?" active":""}" onclick="socialTab='recs';updateSocial()" style="position:relative;">📨 Consigli${pendingRecs>0?`<span style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;background:var(--red);border-radius:50%;"></span>`:""}
+    <button class="page-tab${socialTab==="feed"?" active":""}" onclick="socialTab='feed';updateSocial()">◈ Feed</button>
+    <button class="page-tab${socialTab==="following"?" active":""}" onclick="socialTab='following';updateSocial()">◫ Seguiti</button>
+    <button class="page-tab${socialTab==="find"?" active":""}" onclick="socialTab='find';updateSocial()">◎ Cerca</button>
+    <button class="page-tab${socialTab==="recs"?" active":""}" onclick="socialTab='recs';updateSocial()" style="position:relative;">⊞ Consigli${pendingRecs>0?`<span style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;background:var(--red);border-radius:50%;"></span>`:""}
     </button>
   </div>
   <div id="social-content"><div class="empty"><div class="spinner" style="margin:0 auto;"></div></div></div>`;
@@ -759,7 +758,7 @@ function renderUserProfileHTML(userId,profile,theirLib,followerCount){
     ${isFollowing
       ?`<button class="btn btn-block" onclick="unfollowUserProfile('${userId}','${esc(profile.username)}')" style="color:var(--muted);">Seguito ✓</button>`
       :`<button class="btn btn-primary btn-block" onclick="followUserProfile('${userId}','${esc(profile.username)}')">+ Segui</button>`}
-    <button class="btn" style="flex:1;" onclick="openRecModal('${userId}','${esc(profile.username)}')">📨 Consiglia</button>
+            ${!isSelf?`<button class="btn" style="flex:1;" onclick="openRecModal('${userId}','${esc(profile.username)}')">◧ Consiglia</button>`:""}
   </div>`:""}
   <div class="stat-grid" style="margin-bottom:16px;">
     ${[["Manga",tot],["Capitoli",chaps.toLocaleString()],["Voto medio",avg],["Completati",theirLib.filter(m=>m.status==="Completati").length]].map(([l,v])=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-val">${v}</div></div>`).join("")}
@@ -793,7 +792,7 @@ function renderUserProfileHTML(userId,profile,theirLib,followerCount){
         ${coverImg(m,38)}
         <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(m.title)}</div>
         <div style="display:flex;gap:6px;align-items:center;margin-top:3px;">${bdg(m.status,true)}${m.score>0?starEl(m.score):""}</div></div>
-        ${!isSelf?`<button class="btn btn-sm" onclick="openRecModalManga('${userId}','${esc(profile.username)}','${esc(m.title)}','${esc(m.cover||"")}')" style="font-size:18px;padding:4px 8px;">📨</button>`:""}
+        ${!isSelf?`<button class="btn btn-sm" onclick="openRecModalManga('${userId}','${esc(profile.username)}','${esc(m.title)}','${esc(m.cover||"")}')" style="font-size:12px;padding:6px 10px;">◧</button>`:""}
       </div>`;
     });
   }
