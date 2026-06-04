@@ -646,7 +646,8 @@ async function renderFollowing(el){
         }, 50);
     }
 
-async function searchUsers(v){
+    let userSearchTimer = null;
+    async function searchUsers(v) {
   const el=document.getElementById("user-search-results");if(!el)return;
   clearTimeout(userSearchTimer);
   if(!v.trim()){el.innerHTML=`<div class="empty"><span class="empty-icon">◎</span>Cerca un utente per username</div>`;return}
