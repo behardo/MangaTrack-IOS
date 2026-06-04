@@ -10,6 +10,7 @@
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon-192.png"/>
   <title>MangaTrack</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
     html{-webkit-text-size-adjust:100%;height:100%}
@@ -188,52 +189,50 @@
 <script>
 const SB="https://afkreberztrjuuhaifkr.supabase.co";
 const KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFma3JlYmVyenRyanV1aGFpZmtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NDk0MjksImV4cCI6MjA5NjEyNTQyOX0.wpiOO4AwT6HtY18o1e2DV8BbF46vWT8SIXxfunD3kA4";
+const supa=supabase.createClient(SB,KEY);
 let session=null;
 
-async function safeDbQ(table,query){
-  const h={"apikey":KEY,"Content-Type":"application/json","Accept":"application/json"};
-  if(session?.access_token)h["Authorization"]="Bearer "+session.access_token;
-  const r=await fetch(`${SB}/rest/v1/${table}?${query}`,{method:"GET",headers:h,mode:"cors",credentials:"omit"});
-  const data=await r.json();
-  if(!r.ok)throw new Error(JSON.stringify(data));
-  return Array.isArray(data)?data:[];
+async function safeDbQ(table,filters){
+  let q=supa.from(table).select("*");
+  if(filters)q=filters(q);
+  const {data,error}=await q;
+  if(error)throw new Error(error.message);
+  return data||[];
 }
 async function dbIns(table,data){
-  const h={"apikey":KEY,"Content-Type":"application/json","Prefer":"return=representation"};
-  if(session?.access_token)h["Authorization"]="Bearer "+session.access_token;
-  const r=await fetch(`${SB}/rest/v1/${table}`,{method:"POST",headers:h,body:JSON.stringify(data)});
-  const d=await r.json();if(!r.ok)throw new Error(JSON.stringify(d));return d;
+  const {data:d,error}=await supa.from(table).insert(data).select();
+  if(error)throw new Error(error.message);
+  return d;
 }
 async function dbUpd(table,match,data){
-  const h={"apikey":KEY,"Content-Type":"application/json","Prefer":"return=representation"};
-  if(session?.access_token)h["Authorization"]="Bearer "+session.access_token;
-  const r=await fetch(`${SB}/rest/v1/${table}?${match}`,{method:"PATCH",headers:h,body:JSON.stringify(data)});
-  const d=await r.json();if(!r.ok)throw new Error(JSON.stringify(d));return d;
+  let q=supa.from(table).update(data);
+  Object.entries(match).forEach(([k,v])=>q=q.eq(k,v));
+  const {error}=await q;
+  if(error)throw new Error(error.message);
 }
 async function dbDel(table,match){
-  const h={"apikey":KEY,"Content-Type":"application/json"};
-  if(session?.access_token)h["Authorization"]="Bearer "+session.access_token;
-  const r=await fetch(`${SB}/rest/v1/${table}?${match}`,{method:"DELETE",headers:h});
-  if(!r.ok&&r.status!==204){const d=await r.json().catch(()=>({}));throw new Error(JSON.stringify(d))}
-  return null;
+  let q=supa.from(table).delete();
+  Object.entries(match).forEach(([k,v])=>q=q.eq(k,v));
+  const {error}=await q;
+  if(error)throw new Error(error.message);
 }
 
 async function authSignIn(e,p){
-  const r=await fetch(`${SB}/auth/v1/token?grant_type=password`,{method:"POST",headers:{"apikey":KEY,"Content-Type":"application/json"},body:JSON.stringify({email:e,password:p})});
-  const d=await r.json();if(!r.ok)throw new Error(d.error_description||d.message||"Errore");return d;
+  const {data,error}=await supa.auth.signInWithPassword({email:e,password:p});
+  if(error)throw new Error(error.message);
+  return data.session;
 }
 async function authSignUp(e,p){
-  const r=await fetch(`${SB}/auth/v1/signup`,{method:"POST",headers:{"apikey":KEY,"Content-Type":"application/json"},body:JSON.stringify({email:e,password:p})});
-  const d=await r.json();if(!r.ok)throw new Error(d.error_description||d.message||"Errore");return d;
+  const {data,error}=await supa.auth.signUp({email:e,password:p});
+  if(error)throw new Error(error.message);
+  return data.session;
 }
-function signInGoogle(){window.location.href=`${SB}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin)}`}
-async function authSignOut(){
-  if(session?.access_token)await fetch(`${SB}/auth/v1/logout`,{method:"POST",headers:{"apikey":KEY,"Authorization":"Bearer "+session.access_token}}).catch(()=>{});
-  session=null;localStorage.removeItem("mt_s");
-}
-async function refreshSess(rt){
-  const r=await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`,{method:"POST",headers:{"apikey":KEY,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:rt})});
-  const d=await r.json();if(!r.ok)throw new Error(d.error_description||"Sessione scaduta");return d;
+function signInGoogle(){supa.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin}})}
+async function authSignOut(){await supa.auth.signOut();session=null;localStorage.removeItem("mt_s")}
+async function refreshSess(){
+  const {data,error}=await supa.auth.refreshSession();
+  if(error)throw new Error(error.message);
+  return data.session;
 }
 
 const STATUS=["In lettura","Completati","In pausa","Abbandonati","Da leggere"];
@@ -252,29 +251,15 @@ let pendingRecs=0;
 let userSearchTimer=null;
 
 async function init(){
-  const hash=location.hash;
-  if(hash.includes("access_token")){
-    const p=new URLSearchParams(hash.slice(1));
-    session={access_token:p.get("access_token"),refresh_token:p.get("refresh_token"),user:null};
-    const r=await fetch(`${SB}/auth/v1/user`,{headers:{"apikey":KEY,"Authorization":"Bearer "+session.access_token}});
-    const u=await r.json();
-    if(u?.id){session.user=u;localStorage.setItem("mt_s",JSON.stringify(session))}
-    history.replaceState(null,"",location.pathname);
-  }
-  if(!session){
-    const saved=localStorage.getItem("mt_s");
-    if(saved){
-      try{
-        session=JSON.parse(saved);
-        const r=await refreshSess(session.refresh_token).catch(()=>null);
-        if(r?.access_token){session={...r,user:r.user};localStorage.setItem("mt_s",JSON.stringify(session))}
-        else{session=null;localStorage.removeItem("mt_s")}
-      }catch{session=null}
-    }
+  const {data:{session:s}}=await supa.auth.getSession();
+  if(s){session=s;const u=s.user;session.user=u}
+  else{
+    const {data:{session:rs}}=await supa.auth.refreshSession().catch(()=>({data:{session:null}}));
+    if(rs){session=rs;session.user=rs.user}
   }
   document.getElementById("loader").style.display="none";
   if(!session?.access_token){showAuth();return}
-  const profiles=await safeDbQ("profiles",`id=eq.${session.user.id}&select=*`).catch(()=>[]);
+  const profiles=await safeDbQ("profiles",q=>q.eq("id",session.user.id)).catch(()=>[]);
   if(!profiles.length){document.getElementById("username-screen").style.display="flex";return}
   myProfile=profiles[0];
   await startApp();
@@ -319,33 +304,30 @@ async function submitAuth(){
   if(authTabState==="register"&&!username){showAuthErr("Scegli un username");return}
   const btn=document.getElementById("auth-submit-btn");btn.textContent="...";btn.disabled=true;
   try{
-    let data;
-    if(authTabState==="login"){data=await authSignIn(email,pass)}
-    else{
-      const ex=await safeDbQ("profiles",`username=eq.${encodeURIComponent(username)}&select=id`).catch(()=>[]);
+    if(authTabState==="login"){
+      session=await authSignIn(email,pass);
+      session.user=session.user||(await supa.auth.getUser()).data.user;
+      const profiles=await safeDbQ("profiles",q=>q.eq("id",session.user.id)).catch(()=>[]);
+      if(!profiles.length){document.getElementById("username-screen").style.display="flex";btn.textContent="Accedi";btn.disabled=false;return}
+      myProfile=profiles[0];await startApp();
+    }else{
+      const ex=await safeDbQ("profiles",q=>q.eq("username",username).select("id")).catch(()=>[]);
       if(ex.length>0){showAuthErr("Username già in uso");btn.textContent="Crea account";btn.disabled=false;return}
-      data=await authSignUp(email,pass);
+      session=await authSignUp(email,pass);
+      if(!session){showAuthErr("Controlla la tua email.");btn.textContent="Crea account";btn.disabled=false;return}
+      session.user=(await supa.auth.getUser()).data.user;
+      const color=AVATAR_COLORS[Math.floor(Math.random()*AVATAR_COLORS.length)];
+      await dbIns("profiles",{id:session.user.id,username,avatar_color:color});
+      myProfile={id:session.user.id,username,avatar_color:color};
+      await startApp();
     }
-    if(data?.access_token){
-      session={...data,user:data.user};localStorage.setItem("mt_s",JSON.stringify(session));
-      if(authTabState==="register"){
-        const color=AVATAR_COLORS[Math.floor(Math.random()*AVATAR_COLORS.length)];
-        await dbIns("profiles",{id:session.user.id,username,avatar_color:color});
-        myProfile={id:session.user.id,username,avatar_color:color};
-        await startApp();
-      }else{
-        const profiles=await safeDbQ("profiles",`id=eq.${session.user.id}&select=*`).catch(()=>[]);
-        if(!profiles.length){document.getElementById("username-screen").style.display="flex";btn.textContent="Accedi";btn.disabled=false;return}
-        myProfile=profiles[0];await startApp();
-      }
-    }else if(authTabState==="register"){showAuthErr("Controlla la tua email.")}
   }catch(e){showAuthErr(e.message)}
   btn.textContent=authTabState==="login"?"Accedi":"Crea account";btn.disabled=false;
 }
 async function setupUsername(){
   const username=document.getElementById("setup-username").value.trim();
   if(!username){document.getElementById("username-err").textContent="Inserisci un username";document.getElementById("username-err").style.display="block";return}
-  const ex=await safeDbQ("profiles",`username=eq.${encodeURIComponent(username)}&select=id`).catch(()=>[]);
+  const ex=await safeDbQ("profiles",q=>q.eq("username",username).select("id")).catch(()=>[]);
   if(ex.length>0){document.getElementById("username-err").textContent="Username già in uso";document.getElementById("username-err").style.display="block";return}
   const color=AVATAR_COLORS[Math.floor(Math.random()*AVATAR_COLORS.length)];
   await dbIns("profiles",{id:session.user.id,username,avatar_color:color});
