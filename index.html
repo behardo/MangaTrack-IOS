@@ -434,11 +434,29 @@ function renderLibrary(){
 
 // SEARCH
 function renderSearch(){
-  let h=`<div style="font-weight:800;font-size:18px;margin-bottom:12px;color:var(--red);">Cerca Online</div>
-  <input type="search" id="online-search" value="${esc(searchQ)}" placeholder="Cerca su MyAnimeList..." oninput="onSQ(this.value)" style="margin-bottom:12px;">`;
-  if(searching)h+=`<div class="empty">🔍 Ricerca in corso...</div>`;
-  else if(!searchQ.trim())h+=`<div class="empty"><span class="empty-icon">◎</span>Cerca qualsiasi manga<br>su MyAnimeList</div>`;
-  else if(!searchResults.length)h+=`<div class="empty">Nessun risultato per "${esc(searchQ)}"</div>`;
+  const h=`<div style="font-weight:800;font-size:18px;margin-bottom:12px;color:var(--red);">Cerca Online</div>
+  <input type="search" id="online-search" value="${esc(searchQ)}" placeholder="Cerca su MyAnimeList..." oninput="onSQ(this.value)" style="margin-bottom:12px;">
+  <div id="search-results"></div>`;
+  return h;
+}
+
+function onSQ(v){
+  searchQ=v; clearTimeout(searchTimer);
+  if(!v.trim()){searchResults=[];renderSearchResults();return}
+  searching=true;renderSearchResults();
+  searchTimer=setTimeout(()=>{
+    fetch(`https://api.jikan.moe/v4/manga?q=${encodeURIComponent(v)}&limit=10`)
+      .then(r=>r.json()).then(d=>{searchResults=d.data||[];searching=false;renderSearchResults()})
+      .catch(()=>{searchResults=[];searching=false;renderSearchResults()});
+  },420);
+}
+
+function renderSearchResults(){
+  const el=document.getElementById("search-results"); if(!el)return;
+  let h="";
+  if(searching)h=`<div class="empty">🔍 Ricerca in corso...</div>`;
+  else if(!searchQ.trim())h=`<div class="empty"><span class="empty-icon">◎</span>Cerca qualsiasi manga<br>su MyAnimeList</div>`;
+  else if(!searchResults.length)h=`<div class="empty">Nessun risultato per "${esc(searchQ)}"</div>`;
   else searchResults.forEach(m=>{
     const title=m.title_english||m.title;
     const img=m.images?.jpg?.image_url||"";
@@ -454,18 +472,7 @@ function renderSearch(){
       </div>
     </div></div>`;
   });
-  return h;
-}
-
-function onSQ(v){
-  searchQ=v; clearTimeout(searchTimer);
-  if(!v.trim()){searchResults=[];render();return}
-  searching=true;render();
-  searchTimer=setTimeout(()=>{
-    fetch(`https://api.jikan.moe/v4/manga?q=${encodeURIComponent(v)}&limit=10`)
-      .then(r=>r.json()).then(d=>{searchResults=d.data||[];searching=false;render()})
-      .catch(()=>{searchResults=[];searching=false;render()});
-  },420);
+  el.innerHTML=h;
 }
 
 async function addManga(malId){
