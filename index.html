@@ -586,9 +586,10 @@ function renderSocial(){
   return `<div style="font-weight:800;font-size:18px;margin-bottom:14px;color:var(--red);">Social</div>
   <div class="page-tabs">
     <button class="page-tab${socialTab==="feed"?" active":""}" onclick="socialTab='feed';updateSocial()">◈ Feed</button>
+    <button class="page-tab${socialTab==="foryou"?" active":""}" onclick="socialTab='foryou';updateSocial()">◎ Per te</button>
     <button class="page-tab${socialTab==="following"?" active":""}" onclick="socialTab='following';updateSocial()">◫ Seguiti</button>
-    <button class="page-tab${socialTab==="find"?" active":""}" onclick="socialTab='find';updateSocial()">◎ Cerca</button>
-    <button class="page-tab${socialTab==="recs"?" active":""}" onclick="socialTab='recs';updateSocial()" style="position:relative;">⊞ Consigli${pendingRecs>0?`<span style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;background:var(--red);border-radius:50%;"></span>`:""}</button>
+    <button class="page-tab${socialTab==="find"?" active":""}" onclick="socialTab='find';updateSocial()">⊞ Cerca</button>
+    <button class="page-tab${socialTab==="recs"?" active":""}" onclick="socialTab='recs';updateSocial()" style="position:relative;">◧ Consigli${pendingRecs>0?`<span style="position:absolute;top:-2px;right:-2px;width:8px;height:8px;background:var(--red);border-radius:50%;"></span>`:""}</button>
   </div>
   <div id="social-content"><div class="empty"><div class="spinner" style="margin:0 auto;"></div></div></div>`;
 }
@@ -599,6 +600,7 @@ async function updateSocial(){
   el.innerHTML=`<div class="empty"><div class="spinner" style="margin:0 auto;"></div></div>`;
   try{
     if(socialTab==="feed")await renderFeed(el);
+    else if(socialTab==="foryou")await renderForYou(el);
     else if(socialTab==="following")await renderFollowing(el);
     else if(socialTab==="find")renderFindUsers(el);
     else if(socialTab==="recs")await renderRecs(el);
@@ -654,7 +656,121 @@ async function openActivityManga(title,cover){
   }catch{toast("Errore nel caricare il manga")}
 }
 
-async function renderFollowing(el){
+async function renderForYou(el){
+  el.innerHTML=`<div class="empty"><div class="spinner" style="margin:0 auto;"></div></div>`;
+
+  // generi più letti
+  const genreCount={};
+  library.forEach(m=>{if(m.genre)genreCount[m.genre]=(genreCount[m.genre]||0)+1});
+  const topGenres=Object.entries(genreCount).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g])=>g);
+  const myTitles=new Set(library.map(m=>m.title));
+
+  let sections=[];
+
+  // 1. Consigliati dagli amici (manga degli amici con voto alto che non hai)
+  try{
+    const follows=await q("follows",`follower_id=eq.${session.user.id}&select=following_id`)||[];
+    if(follows.length){
+      const ids=follows.map(f=>f.following_id);
+      const friendLib=await q("library",`user_id=in.(${ids.join(",")})&score=gte.8&select=*`)||[];
+      const uids=[...new Set(friendLib.map(m=>m.user_id))];
+      const profiles=uids.length?await q("profiles",`id=in.(${uids.join(",")})&select=*`)||[]:[];
+      const pm={};profiles.forEach(p=>pm[p.id]=p);
+      const notOwned=friendLib.filter(m=>!myTitles.has(m.title));
+      // deduplicati per titolo, prendi quello col voto più alto
+      const seen=new Map();
+      notOwned.forEach(m=>{if(!seen.has(m.title)||seen.get(m.title).score<m.score)seen.set(m.title,m)});
+      const top=[...seen.values()].sort((a,b)=>b.score-a.score).slice(0,6);
+      if(top.length){
+        sections.push({
+          label:"★ Piaciuti ai tuoi amici",
+          items:top.map(m=>({
+            title:m.title,cover:m.cover,score:m.score,
+            sub:`★${m.score} per @${pm[m.user_id]?.username||"?"}`,
+            genre:m.genre
+          }))
+        });
+      }
+    }
+  }catch{}
+
+  // 2. Per genere preferito — cerca su Jikan
+  if(topGenres.length){
+    try{
+      const genre=topGenres[0];
+      const r=await fetch(`https://api.jikan.moe/v4/manga?genres=&order_by=score&sort=desc&limit=10&q=${encodeURIComponent(genre)}`);
+      const d=await r.json();
+      const results=(d.data||[]).filter(m=>!myTitles.has(m.title_english||m.title)).slice(0,6);
+      if(results.length){
+        sections.push({
+          label:`Basato su: ${topGenres.slice(0,2).join(", ")}`,
+          jikanItems:results
+        });
+      }
+    }catch{}
+  }
+
+  if(!sections.length){
+    el.innerHTML=`<div class="empty"><span class="empty-icon">◎</span>Aggiungi manga alla libreria<br>per ricevere consigli personalizzati</div>`;
+    return;
+  }
+
+  let h="";
+  sections.forEach(sec=>{
+    h+=`<div class="card" style="margin-bottom:10px;"><div class="section-label">${esc(sec.label)}</div>`;
+    if(sec.items){
+      sec.items.forEach(m=>{
+        const inLib=myTitles.has(m.title);
+        h+=`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+          ${m.cover?`<img src="${esc(m.cover)}" class="cover" style="width:38px;height:53px;" onerror="this.style.display='none'" loading="lazy">`:`<div class="cover-ph" style="width:38px;height:53px;"><span style="font-size:11px;">${m.title.slice(0,2).toUpperCase()}</span></div>`}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(m.title)}</div>
+            <div style="font-size:11px;color:var(--muted);">${esc(m.sub||"")}</div>
+          </div>
+          ${inLib?`<span style="font-size:11px;color:var(--muted);">✓</span>`:`<button class="btn btn-sm btn-primary" onclick="addForYouManga('${esc(m.title)}','${esc(m.cover||"")}','${esc(m.genre||"")}')">+</button>`}
+        </div>`;
+      });
+    }
+    if(sec.jikanItems){
+      sec.jikanItems.forEach((m,i)=>{
+        const title=m.title_english||m.title;
+        const img=m.images?.jpg?.image_url||"";
+        const inLib=myTitles.has(title);
+        h+=`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="width:20px;font-size:12px;color:var(--muted);font-weight:700;text-align:center;flex-shrink:0;">${i+1}</div>
+          ${img?`<img src="${esc(img)}" class="cover" style="width:38px;height:53px;" onerror="this.style.display='none'" loading="lazy">`:`<div class="cover-ph" style="width:38px;height:53px;"><span style="font-size:11px;">${title.slice(0,2).toUpperCase()}</span></div>`}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(title)}</div>
+            <div style="font-size:11px;color:var(--muted);">${(m.genres||[]).slice(0,2).map(g=>g.name).join(", ")}${m.score?` · ★${m.score}`:""}</div>
+          </div>
+          ${inLib?`<span style="font-size:11px;color:var(--muted);">✓</span>`:`<button class="btn btn-sm btn-primary" onclick="addForYouJikan(${i})">+</button>`}
+        </div>`;
+      });
+      // salva i risultati jikan per poterli aggiungere
+      window._forYouJikan=sec.jikanItems;
+    }
+    h+=`</div>`;
+  });
+  el.innerHTML=h;
+}
+
+async function addForYouManga(title,cover,genre){
+  if(library.some(x=>x.title===title)){toast("Già in libreria!");return}
+  try{
+    const res=await ins("library",{title,status:"Da leggere",chapters:0,total_chapters:null,score:0,genre:genre||"Action",cover:cover||null,favourite:false,review:"",user_id:session.user.id});
+    library.unshift(res[0]||{title,id:Date.now()});
+    await ins("activity",{user_id:session.user.id,type:"added",manga_title:title,manga_cover:cover||null,details:""}).catch(()=>{});
+    toast(`"${title.slice(0,20)}…" aggiunto!`);updateSocial();
+  }catch(e){toast("Errore: "+e.message)}
+}
+
+async function addForYouJikan(idx){
+  const m=window._forYouJikan?.[idx];if(!m)return;
+  const title=m.title_english||m.title;
+  const cover=m.images?.jpg?.image_url||null;
+  const genre=m.genres?.[0]?.name||"Action";
+  await addForYouManga(title,cover,genre);
+}
   const follows=await q("follows",`follower_id=eq.${session.user.id}&select=following_id`)||[];
   if(!follows.length){el.innerHTML=`<div class="empty"><span class="empty-icon">◫</span>Non segui ancora nessuno</div>`;return}
   const ids=follows.map(f=>f.following_id);
