@@ -615,7 +615,43 @@ async function renderFeed(el){
   const profiles=await q("profiles",`id=in.(${uids.join(",")})&select=*`)||[];
   const pm={};profiles.forEach(p=>pm[p.id]=p);
   const tl={added:"ha aggiunto",completed:"ha completato",status_changed:"ha aggiornato",scored:"ha votato"};
-  el.innerHTML=activity.map(a=>{const p=pm[a.user_id]||{username:"?",avatar_color:"#c0392b"};return `<div class="act-item"><div onclick="openUserProfile('${a.user_id}')" style="cursor:pointer;">${avatarEl(p,36)}</div><div style="flex:1;min-width:0;"><div style="font-size:13px;"><strong onclick="openUserProfile('${a.user_id}')" style="cursor:pointer;">@${esc(p.username)}</strong> <span style="color:var(--muted);">${tl[a.type]||a.type}</span></div><div style="font-size:13px;font-weight:700;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(a.manga_title)}</div>${a.details?`<div style="font-size:11px;color:var(--muted);">${esc(a.details)}</div>`:""}<div style="font-size:11px;color:var(--dim);margin-top:3px;">${timeAgo(a.created_at)}</div></div>${a.manga_cover?`<img src="${esc(a.manga_cover)}" style="width:36px;height:50px;border-radius:6px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">`:""}</div>`}).join("");
+  el.innerHTML=activity.map(a=>{
+    const p=pm[a.user_id]||{username:"?",avatar_color:"#c0392b"};
+    return `<div class="act-item">
+      <div onclick="openUserProfile('${a.user_id}')" style="cursor:pointer;">${avatarEl(p,36)}</div>
+      <div style="flex:1;min-width:0;cursor:pointer;" onclick="openActivityManga('${esc(a.manga_title)}','${esc(a.manga_cover||"")}')">
+        <div style="font-size:13px;"><strong onclick="event.stopPropagation();openUserProfile('${a.user_id}')" style="cursor:pointer;">@${esc(p.username)}</strong> <span style="color:var(--muted);">${tl[a.type]||a.type}</span></div>
+        <div style="font-size:13px;font-weight:700;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--red);">${esc(a.manga_title)}</div>
+        ${a.details?`<div style="font-size:11px;color:var(--muted);">${esc(a.details)}</div>`:""}
+        <div style="font-size:11px;color:var(--dim);margin-top:3px;">${timeAgo(a.created_at)}</div>
+      </div>
+      ${a.manga_cover?`<img src="${esc(a.manga_cover)}" style="width:36px;height:50px;border-radius:6px;object-fit:cover;flex-shrink:0;cursor:pointer;" onclick="openActivityManga('${esc(a.manga_title)}','${esc(a.manga_cover||"")}')" onerror="this.style.display='none'">`:""}
+    </div>`;
+  }).join("");
+}
+
+async function openActivityManga(title,cover){
+  // cerca il manga nella propria libreria
+  const inLib=library.find(m=>m.title===title);
+  if(inLib){detail=inLib;pushView(title,renderDetailHTML);return}
+  // altrimenti mostra preview cercandolo su Jikan
+  toast("Ricerca manga...");
+  try{
+    const r=await fetch(`https://api.jikan.moe/v4/manga?q=${encodeURIComponent(title)}&limit=5`);
+    const d=await r.json();
+    const found=d.data?.find(m=>(m.title_english||m.title)===title)||d.data?.[0];
+    if(found){
+      // trova l'indice e apri preview
+      searchResults=[found];
+      openPreview(0,false);
+    }else{
+      // mostra schermata semplice
+      pushView(title,()=>`<div style="display:flex;gap:14px;margin-bottom:16px;">
+        ${cover?`<img src="${esc(cover)}" class="cover" style="width:90px;height:126px;">`:`<div class="cover-ph" style="width:90px;height:126px;"><span style="font-size:22px;">${title.slice(0,2).toUpperCase()}</span></div>`}
+        <div style="flex:1;"><div style="font-weight:900;font-size:18px;line-height:1.3;">${esc(title)}</div><div style="font-size:13px;color:var(--muted);margin-top:8px;">Non in libreria</div></div>
+      </div>`);
+    }
+  }catch{toast("Errore nel caricare il manga")}
 }
 
 async function renderFollowing(el){
@@ -813,10 +849,46 @@ function renderDetailHTML(){
   <div class="card"><div class="section-label">Voto</div><div style="display:flex;align-items:center;gap:12px;"><span id="d-sv" style="font-size:24px;color:#f1c40f;font-weight:900;min-width:30px;">${m.score||"—"}</span><input type="range" min="0" max="10" step="1" id="d-score" value="${m.score}" oninput="setDF('score',parseInt(this.value));document.getElementById('d-sv').textContent=this.value||'—'"><span style="color:var(--muted);font-size:12px;">/10</span></div></div>
   <div class="card"><div class="section-label">Recensione</div><textarea id="d-rev" rows="3" placeholder="Scrivi qualcosa..." onchange="setDF('review',this.value)">${esc(m.review||"")}</textarea></div>
   <div style="margin-bottom:10px;"><button class="btn${m.favourite?" btn-primary":""} btn-block" onclick="setDF('favourite',${!m.favourite});refreshDetail()">${m.favourite?"★ Preferito":"☆ Aggiungi ai preferiti"}</button></div>
+  <div style="margin-bottom:10px;"><button class="btn btn-block" onclick="openRecModalFromDetail()">◧ Consiglia a un amico</button></div>
   <div style="display:flex;gap:10px;margin-bottom:20px;"><button class="btn btn-primary" style="flex:2;" onclick="saveDetail()" id="save-btn">Salva</button><button class="btn btn-danger" style="flex:1;" onclick="deleteDetail()">Rimuovi</button></div>`;
 }
 function refreshDetail(){document.getElementById("content").innerHTML=`<div class="fade-in">${renderDetailHTML()}</div>`}
-function setDF(k,v){detail[k]=v;if(k==="chapters"&&detail.total_chapters){const el=document.getElementById("d-prog");if(el)el.style.width=pct(detail)+"%"}}
+function setDF(k,v){
+  detail[k]=v;
+  // auto-completa capitoli e volumi se stato = Completati
+  if(k==="status"&&v==="Completati"){
+    if(detail.total_chapters){detail.chapters=detail.total_chapters;const el=document.getElementById("d-ch");if(el)el.value=detail.total_chapters;}
+    if(detail.total_volumes){detail.volumes=detail.total_volumes;const el=document.getElementById("d-vol");if(el)el.value=detail.total_volumes;}
+    const prog=document.getElementById("d-prog");if(prog)prog.style.width="100%";
+  }
+  if(k==="chapters"&&detail.total_chapters){const el=document.getElementById("d-prog");if(el)el.style.width=pct(detail)+"%"}
+}
+
+async function openRecModalFromDetail(){
+  // carica i seguiti per poter scegliere a chi consigliare
+  try{
+    const follows=await q("follows",`follower_id=eq.${session.user.id}&select=following_id`)||[];
+    if(!follows.length){toast("Non segui ancora nessuno!");return}
+    const ids=follows.map(f=>f.following_id);
+    const profiles=await q("profiles",`id=in.(${ids.join(",")})&select=*`)||[];
+    if(!profiles.length){toast("Nessun amico trovato!");return}
+    // mostra picker amici
+    recManga={title:detail.title,cover:detail.cover||""};
+    recTarget=null;
+    document.getElementById("rec-title").textContent="Consiglia manga";
+    document.getElementById("rec-sub").textContent=detail.title;
+    document.getElementById("rec-msg").value="";
+    document.getElementById("rec-picker").innerHTML=profiles.map(p=>`<div onclick="selectRecTarget('${p.id}','${esc(p.username)}',this)" style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:10px;cursor:pointer;" class="rec-friend-item">${avatarEl(p,32)}<span style="font-size:13px;font-weight:600;">@${esc(p.username)}</span></div>`).join("");
+    document.getElementById("rec-modal").style.display="flex";
+  }catch(e){toast("Errore: "+e.message)}
+}
+
+function selectRecTarget(id,username,el){
+  recTarget={id,username};
+  document.getElementById("rec-title").textContent=`Consiglia a @${username}`;
+  document.querySelectorAll(".rec-friend-item").forEach(e=>e.style.background="");
+  el.style.background="var(--redd)";
+}
 async function saveDetail(){
   const btn=document.getElementById("save-btn");if(btn){btn.textContent="...";btn.disabled=true}
   try{
