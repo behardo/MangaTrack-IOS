@@ -450,7 +450,6 @@ function renderLibrary(){
   <div id="lib-list">${libList()}</div>`;
 }
 
-let libGenreFilter="Tutti";
 
 function libGenreChips(){
   const genres=[...new Set(library.map(m=>m.genre).filter(Boolean))].sort();
